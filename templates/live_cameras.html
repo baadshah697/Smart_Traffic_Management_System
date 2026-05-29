@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Live Cameras</title>
+</head>
+<body>
+    <h1>Live Cameras</h1>
+    <ul id="camera-list"></ul>
+    <video id="live-stream" width="640" height="480" controls autoplay></video>
+
+    <h2>Upload Video</h2>
+    <input type="file" id="video-file">
+    <button onclick="uploadVideo()">Upload</button>
+
+    <script>
+        async function fetchCameras() {
+            const res = await fetch('/cameras/list', {
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+            });
+            const data = await res.json();
+            const list = document.getElementById("camera-list");
+            data.forEach(cam => {
+                const li = document.createElement("li");
+                li.innerHTML = `${cam.location_name} - <button onclick="viewStream('${cam.ip_address}')">View</button>`;
+                list.appendChild(li);
+            });
+        }
+
+        function viewStream(ip) {
+            const video = document.getElementById("live-stream");
+            video.src = `http://${ip}/live`; // assuming camera provides MJPEG/RTSP-to-HTTP streaming
+            video.play();
+        }
+
+        async function uploadVideo() {
+            const file = document.getElementById("video-file").files[0];
+            const formData = new FormData();
+            formData.append("video", file);
+            const res = await fetch('/cameras/upload', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                body: formData
+            });
+            const result = await res.json();
+            alert("Violations detected: " + JSON.stringify(result.violations_detected));
+        }
+
+        fetchCameras();
+    </script>
+</body>
+</html>

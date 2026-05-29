@@ -1,0 +1,9 @@
+/* report-accident.css */
+form#accidentForm {
+    max-width: 500px;
+    margin: 20px auto;
+}
+
+form#accidentForm input, form#accidentForm select, form#accidentForm textarea {
+    margin-bottom: 15px;
+}

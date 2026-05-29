@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="assets/css/common.css">
+ <link rel="stylesheet" href="assets/css/report-accident.css">
+
+    <title>Report Accident</title>
+</head>
+<body>
+    <body data-protected="true">
+
+    <h1>Report Accident</h1>
+    <button onclick="logout()">Logout</button>
+    <form id="accForm">
+        <input type="text" id="location" placeholder="Location" required><br>
+        <input type="text" id="severity" placeholder="Severity" required><br>
+        <input type="text" id="description" placeholder="Description" required><br>
+        <button type="submit">Report</button>
+    </form>
+
+    <script>
+        const token = localStorage.getItem('token');
+        if(!token) location.href='login.html';
+        function logout(){ localStorage.removeItem('token'); location.href='login.html'; }
+
+        document.getElementById('accForm').addEventListener('submit', async e=>{
+            e.preventDefault();
+            const payload={
+                location: document.getElementById('location').value,
+                severity: document.getElementById('severity').value,
+                description: document.getElementById('description').value
+            };
+            try{
+                const res = await fetch('http://127.0.0.1:8000/traffic/accident',{
+                    method:'POST',
+                    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                alert(JSON.stringify(data));
+            } catch(err){ alert(err); }
+        });
+    </script>
+</body>
+</html>

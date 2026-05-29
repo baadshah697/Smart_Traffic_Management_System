@@ -1,0 +1,14 @@
+/* register.css - Registration page specific */
+form#registerForm {
+    max-width: 400px;
+    margin: 40px auto;
+}
+
+form#registerForm h2 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+form#registerForm button {
+    width: 100%;
+}

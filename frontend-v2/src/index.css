@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Keeps the whole browser window from scrolling */
+  background-color: #020617;
+}
+
+/* 🏎️ Custom Red Admin Scrollbar */
+.admin-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.admin-scrollbar::-webkit-scrollbar-thumb {
+  background: #dc2626; /* Crimson Red */
+  border-radius: 10px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #ef4444;
+}

@@ -1,0 +1,21 @@
+/* officer-dashboard.css */
+#violationsTable {
+    margin-top: 15px;
+}
+
+#violationsChart {
+    margin-top: 20px;
+}
+
+#camerasContainer div {
+    margin-bottom: 20px;
+}
+
+#videoFile {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+#accidentForm input, #accidentForm select, #accidentForm textarea {
+    margin-bottom: 10px;
+}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>View Payments - Admin</title>
+</head>
+
+<body>
+    <body data-protected="true">
+
+    <h1>All Payments</h1>
+    <button onclick="logout()">Logout</button>
+
+    <table border="1" id="paymentsTable">
+        <tr><th>Challan</th><th>User</th><th>Amount</th><th>Status</th></tr>
+    </table>
+
+    <script>
+        const token = localStorage.getItem('token');
+        if(!token) location.href='login.html';
+        function logout(){ localStorage.removeItem('token'); location.href='login.html'; }
+
+        async function fetchPayments(){
+            const res = await fetch('http://127.0.0.1:8000/payments/all',{
+                headers:{'Authorization':'Bearer '+token}
+            });
+            const data = await res.json();
+            const table = document.getElementById('paymentsTable');
+            table.innerHTML='<tr><th>Challan</th><th>User</th><th>Amount</th><th>Status</th></tr>';
+            data.forEach(p=>{
+                const row = table.insertRow();
+                row.insertCell(0).innerText=p.challan_id;
+                row.insertCell(1).innerText=p.user_id;
+                row.insertCell(2).innerText=p.amount;
+                row.insertCell(3).innerText=p.status;
+            });
+        }
+        fetchPayments();
+    </script>
+</body>
+</html>

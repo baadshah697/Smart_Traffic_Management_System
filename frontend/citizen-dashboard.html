@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="assets/css/common.css">
+ <link rel="stylesheet" href="assets/css/view-payments.css">
+ <link rel="stylesheet" href="assets/css/common.css">
+    <link rel="stylesheet" href="assets/css/citizen-dashboard.css">
+    <title>Citizen Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/auth.js"></script>
+   
+</head>
+<body data-protected="true">
+
+<h1>Citizen Dashboard</h1>
+<button id="logoutBtn">Logout</button>
+
+<h2>My Challans</h2>
+<canvas id="challansChart" width="600" height="250"></canvas>
+<table border="1">
+    <thead>
+        <tr>
+            <th>Vehicle</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Due Date</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody id="myChallansBody"></tbody>
+</table>
+
+</body>
+</html>
