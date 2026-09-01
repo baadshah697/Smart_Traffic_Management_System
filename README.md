@@ -81,7 +81,21 @@ Because AI models are large binaries, they are excluded from this repository. Be
 ## 💻 Running the System
 
 ### Step 1: Start the Backend (FastAPI + AI Engine)
-Open a terminal in the root directory and install dependencies:
+Open a terminal in the root directory.
+
+**1. Create and Activate a Virtual Environment (Highly Recommended)**
+To prevent package conflicts with your system Python, create an isolated environment:
+```bash
+# On Windows
+python -m venv venv
+venv\Scripts\activate
+
+# On Mac/Linux
+python3 -m venv venv
+source venv/bin/activate
+```
+
+**2. Install Dependencies**
 
 **Option A: 🟢 NVIDIA GPU with CUDA (Recommended for Real-Time Speeds)**
 If you have an NVIDIA GPU, ensure you install the CUDA version of `torch` and `torchvision` (refer to the [PyTorch Guide](https://pytorch.org/get-started/locally/)).
