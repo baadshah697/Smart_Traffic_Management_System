@@ -49,3 +49,17 @@ frontend1/
 uploads/
 static/
 test_images/
+
+# Local Utilities & Scratchpads
+backend_test.py
+check_model.py
+download_diagrams.py
+keep_tunnel_alive.js
+package.json
+package-lock.json
+sms_diagnostic.py
+test_camera.py
+test_detection.py
+test_ppo.py
+train_local.py
+verify_db.py
