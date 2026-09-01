@@ -1,9 +1,0 @@
-/* admin-dashboard.css */
-#parkingTable, #paymentsTable {
-    margin-top: 15px;
-}
-
-#parkingChart {
-    margin-top: 20px;
-    max-width: 600px;
-}

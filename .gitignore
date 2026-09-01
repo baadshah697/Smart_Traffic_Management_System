@@ -40,3 +40,12 @@ PyWhatKit_DB.txt
 test_*.jpg
 test_*.png
 *.sqlite3
+
+# Deprecated / Unused Folders
+Microsoft/
+backup_original/
+frontend/
+frontend1/
+uploads/
+static/
+test_images/

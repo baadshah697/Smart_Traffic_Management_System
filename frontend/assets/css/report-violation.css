@@ -1,9 +1,0 @@
-/* report-violation.css */
-form#violationForm {
-    max-width: 500px;
-    margin: 20px auto;
-}
-
-form#violationForm input, form#violationForm select {
-    margin-bottom: 15px;
-}
