@@ -57,9 +57,13 @@ The system uses Supabase. You need to provide your API keys to connect to the da
 2. Open `.env` and fill in your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 4. AI Model Weights (Critical)
-Because AI models are large binaries, they are excluded from this repository. Before starting the backend, you **must** obtain the following model weights and place them in the **root** directory:
+Because AI models are large binaries, they are excluded from this repository. Before starting the backend, you **must** obtain the following model weights and place them in their respective directories:
+
+**Place in `app/models/`:**
 - `best.pt` (Custom enforcement YOLO model)
 - `yolov8n.pt` (Standard YOLO tracking model)
+
+**Place in the project root (`./`):**
 - `vitals_ppo_model.zip` (Trained Reinforcement Learning agent)
 - `vitals_ppo_vecnorm.pkl` (RL environment vector normalizer)
 
