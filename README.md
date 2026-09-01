@@ -34,93 +34,117 @@ V.I.T.A.L.S. is an end-to-end, fully autonomous ecosystem designed to modernize 
 
 ## 🚀 Getting Started
 
-Follow these instructions to clone, set up, and run the complete system locally.
+Follow these step-by-step instructions to clone, configure, and boot the entire system on your local machine.
 
-### 1. Prerequisites
-- **Python 3.9+** (For the FastAPI Backend and AI Models)
-- **Node.js v18+ & npm** (For the React Dashboard)
-- **Git**
-- **NVIDIA GPU with CUDA Support** *(Optional but Highly Recommended. The system runs successfully on a CPU, but real-time video processing will be slower).*
+### 1. Prerequisites (What you need installed)
+Before doing anything, ensure your computer has the following software installed:
+- **[Python 3.9+](https://www.python.org/downloads/)**: Required to run the FastAPI backend and AI Models. *(Make sure to check "Add Python to PATH" during installation).*
+- **[Node.js v18+](https://nodejs.org/)**: Required to run the React Web Dashboard. This will also install `npm`.
+- **[Git](https://git-scm.com/downloads)**: Required to download this repository to your computer.
+- **[Supabase Account](https://supabase.com/)**: A free account is required to host the Postgres database.
+- **NVIDIA GPU with CUDA Support** *(Optional but Highly Recommended)*. The AI models run optimally on a dedicated GPU. If you don't have one, the system will automatically fall back to CPU mode, which runs successfully but at a much slower video framerate.
 
-### 2. Clone the Repository
+### 2. Download the Project
+Open your terminal (or Command Prompt) and download the code to your local machine:
 ```bash
 git clone https://github.com/baadshah697/Smart_Traffic_Management_System.git
 cd Smart_Traffic_Management_System
 ```
 
-
-### 3. Environment Variables
-The system uses Supabase. You need to provide your API keys to connect to the database.
-1. Duplicate the example environment file:
+### 3. Connect to Supabase
+The AI backend and the React frontend both need to talk to a centralized database to log traffic violations and read intersection states. 
+1. Create a new project in your [Supabase Dashboard](https://supabase.com/dashboard/projects).
+2. Go to **Project Settings -> API** to find your `Project URL` and `service_role` secret key.
+3. In your project folder, create a copy of the hidden environment file:
    ```bash
    cp .env.example .env
    ```
-2. Open `.env` and fill in your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+4. Open the `.env` file in a text editor and paste your Supabase URL and Key inside.
 
-### 4. Database Setup
-Your new Supabase project is initially empty. You must create the required tables and security policies:
-1. Go to your Supabase Dashboard -> **SQL Editor**.
-2. Open the `database/` folder in this repository.
-3. Copy and execute the contents of `00_master_schema.sql`, `schema.sql`, `rls_policies.sql`, `intersection_status.sql`, and `triggers.sql` (in that order) to initialize your database structure.
+### 4. Initialize the Database Tables
+Your new Supabase project is completely empty. We need to create the tables (like `violations`, `e_challans`, etc.) so the AI has a place to save data.
+1. In your Supabase Dashboard, click on **SQL Editor** on the left menu.
+2. On your computer, open the `database/` folder in this repository.
+3. Copy the text from inside these files and run them in the Supabase SQL Editor **in this exact order**:
+   - `00_master_schema.sql` *(Creates all tables and Enums)*
+   - `schema.sql` *(Creates functions for the AI triggers)*
+   - `rls_policies.sql` *(Secures the database)*
+   - `intersection_status.sql` *(Sets up the Reinforcement Learning tables)*
+   - `triggers.sql` *(Automates payments and E-Challan logic)*
 
-### 5. AI Model Weights (Critical)
-Because AI models are large binaries, they are excluded from this repository. Before starting the backend, you **must** obtain the following model weights and place them in their respective directories:
-
-**Place in `app/models/`:**
-- `best.pt` (Custom enforcement YOLO model)
-- `yolov8n.pt` (Standard YOLO tracking model)
-
-**Place in the project root (`./`):**
-- `vitals_ppo_model.zip` (Trained Reinforcement Learning agent)
-- `vitals_ppo_vecnorm.pkl` (RL environment vector normalizer)
+### 5. Download the AI Model Weights (Critical)
+Because AI model files are massive, they are not stored on GitHub. You **must** download them manually. If you skip this, the backend will crash immediately because it has no "brain" to use.
 
 👉 **[Download all 4 required AI Models from Google Drive here](https://drive.google.com/drive/folders/1WHVeHnA-8CUa1F0rWcdnSnSyWjpA_pYj?usp=sharing)**
+
+Once downloaded, place the files exactly as follows:
+- Put **`best.pt`** and **`yolov8n.pt`** inside the `app/models/` folder.
+- Put **`vitals_ppo_model.zip`** and **`vitals_ppo_vecnorm.pkl`** in the main root folder of the project.
 
 ---
 
 ## 💻 Running the System
 
-### Step 1: Start the Backend (FastAPI + AI Engine)
-Open a terminal in the root directory.
+Now that the database and AI models are ready, it's time to boot the system! You will need **two separate terminals** open: one for the Backend, and one for the Frontend.
 
-**1. Create and Activate a Virtual Environment (Highly Recommended)**
-To prevent package conflicts with your system Python, create an isolated environment:
+### Step 1: Start the Backend (FastAPI + AI Engine)
+The backend is the engine of the project. It runs the YOLOv8 object detection, calculates traffic congestion, makes Reinforcement Learning decisions, and sends data to Supabase.
+
+**1. Create an Isolated Python Environment**
+It is highly recommended to create a "Virtual Environment". This acts as a sandbox, ensuring the AI packages we are about to install don't interfere with other Python projects on your PC.
 ```bash
-# On Windows
+# If you are on Windows:
 python -m venv venv
 venv\Scripts\activate
 
-# On Mac/Linux
+# If you are on Mac/Linux:
 python3 -m venv venv
 source venv/bin/activate
 ```
+*(You should now see `(venv)` at the start of your terminal line).*
 
-**2. Install Dependencies**
+**2. Install the Required Python Packages**
+We need to install libraries like OpenCV, EasyOCR, FastAPI, and PyTorch. 
 
-**Option A: 🟢 NVIDIA GPU with CUDA (Recommended for Real-Time Speeds)**
-If you have an NVIDIA GPU, ensure you install the CUDA version of `torch` and `torchvision` (refer to the [PyTorch Guide](https://pytorch.org/get-started/locally/)).
-
-**Option B: 🔵 CPU-Only Mode (For Mac, or PCs without NVIDIA GPUs)**
-If your system does not have an NVIDIA GPU, simply run the standard installation. The codebase automatically detects your hardware and will successfully run the AI in CPU mode (though video FPS will be slower).
+* **Option A: 🟢 I have an NVIDIA GPU (Recommended)**
+  First, go to the [PyTorch Get Started Guide](https://pytorch.org/get-started/locally/) and install the specific CUDA version of `torch` and `torchvision` for your computer. Then, run the command below.
+* **Option B: 🔵 I am on a Mac or CPU-Only PC**
+  Simply run the command below. PyTorch will automatically install the CPU-only version.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Start the server:
+**3. Boot the Server**
+Once everything is installed, start the FastAPI server using `uvicorn`:
 ```bash
 python -m uvicorn app.main:app --reload
 ```
-*Note: This will output initialization logs (detecting either CUDA or CPU) and automatically boot the intersection simulation threads.*
+*What happens now?* You will see logs in your terminal indicating that the AI models are loading into memory (it will tell you if it's using CUDA or CPU). The backend will then automatically start processing the camera feeds and updating your Supabase database in real-time.
 
 ### Step 2: Start the Officer Web Dashboard (React)
-Open a new terminal and navigate to the frontend folder:
+While the backend is running in your first terminal, open a **new** terminal window to start the user interface.
+
+The frontend is built with React and Vite. It provides a beautiful dashboard for traffic officers to view live AI camera feeds, manage E-Challans, and see intersection stats.
+
+**1. Navigate to the Frontend Folder**
 ```bash
 cd frontend-v2
+```
+
+**2. Install Node Packages**
+This downloads all the React dependencies (like TailwindCSS, Recharts, and Mapbox) into a `node_modules` folder.
+```bash
 npm install
+```
+
+**3. Boot the React App**
+```bash
 npm run dev
 ```
-Navigate to the provided localhost URL (usually `http://localhost:5173`). The dashboard polls the backend every second to show live AI decisions on the **Surveillance** page.
+*What happens now?* Vite will start a local web server. Open your internet browser and go to the link provided in the terminal (usually **`http://localhost:5173`**). 
+
+Congratulations! The entire V.I.T.A.L.S. ecosystem is now running on your machine.
 
 
 ---
