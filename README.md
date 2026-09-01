@@ -67,7 +67,7 @@ Because AI models are large binaries, they are excluded from this repository. Be
 - `vitals_ppo_model.zip` (Trained Reinforcement Learning agent)
 - `vitals_ppo_vecnorm.pkl` (RL environment vector normalizer)
 
-*(Contact the repository owner or refer to release artifacts to download these weights).*
+👉 **[Download all 4 required AI Models from Google Drive here](https://drive.google.com/drive/folders/1WHVeHnA-8CUa1F0rWcdnSnSyWjpA_pYj?usp=sharing)**
 
 ---
 
