@@ -37,10 +37,10 @@ V.I.T.A.L.S. is an end-to-end, fully autonomous ecosystem designed to modernize 
 Follow these instructions to clone, set up, and run the complete system locally.
 
 ### 1. Prerequisites
-- **NVIDIA GPU with CUDA Support** (Highly Recommended: Running dual YOLOv8 models on CPU will cause severe lag during real-time traffic analysis)
 - **Python 3.9+** (For the FastAPI Backend and AI Models)
 - **Node.js v18+ & npm** (For the React Dashboard)
 - **Git**
+- **NVIDIA GPU with CUDA Support** *(Optional but Highly Recommended. The system runs successfully on a CPU, but real-time video processing will be slower).*
 
 ### 2. Clone the Repository
 ```bash
@@ -81,17 +81,23 @@ Because AI models are large binaries, they are excluded from this repository. Be
 ## 💻 Running the System
 
 ### Step 1: Start the Backend (FastAPI + AI Engine)
-Open a terminal in the root directory:
+Open a terminal in the root directory and install dependencies:
+
+**Option A: 🟢 NVIDIA GPU with CUDA (Recommended for Real-Time Speeds)**
+If you have an NVIDIA GPU, ensure you install the CUDA version of `torch` and `torchvision` (refer to the [PyTorch Guide](https://pytorch.org/get-started/locally/)).
+
+**Option B: 🔵 CPU-Only Mode (For Mac, or PCs without NVIDIA GPUs)**
+If your system does not have an NVIDIA GPU, simply run the standard installation. The codebase automatically detects your hardware and will successfully run the AI in CPU mode (though video FPS will be slower).
+
 ```bash
 pip install -r requirements.txt
 ```
-*(Important: Depending on your OS, standard `pip install` might download the CPU version of PyTorch. For GPU acceleration, you must manually install the CUDA version of `torch` and `torchvision`. Refer to the [PyTorch Get Started Guide](https://pytorch.org/get-started/locally/) for your specific CUDA version).*
 
 Start the server:
 ```bash
 python -m uvicorn app.main:app --reload
 ```
-*Note: This will output GPU (CUDA) initialization logs and automatically boot the intersection simulation threads.*
+*Note: This will output initialization logs (detecting either CUDA or CPU) and automatically boot the intersection simulation threads.*
 
 ### Step 2: Start the Officer Web Dashboard (React)
 Open a new terminal and navigate to the frontend folder:
