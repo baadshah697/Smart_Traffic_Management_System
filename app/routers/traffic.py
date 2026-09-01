@@ -136,6 +136,15 @@ def get_congestion():
 
 
 # ─────────────────────────────────────────────────────────────
+# Announcements View: Exposes live audio announcements
+# ─────────────────────────────────────────────────────────────
+@router.get("/announcements")
+def get_announcements():
+    """Returns the list of recent traffic announcements."""
+    return intersection_controller.get_announcements()
+
+
+# ─────────────────────────────────────────────────────────────
 # Accident Reporting
 # ─────────────────────────────────────────────────────────────
 @router.post("/accident")

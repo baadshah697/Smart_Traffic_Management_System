@@ -8,8 +8,8 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/violations", tags=["Violations"])
 
-# 🏛️ INDIAN PLATE STANDARDS (LL NN LL NNNN)
-INDIAN_PLATE_PATTERN = r"^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$"
+# 🏛️ INDIAN PLATE STANDARDS
+INDIAN_PLATE_PATTERN = r"^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{1,4}$"
 
 # 💰 DYNAMIC FINE CONFIGURATION (Bhopal PTU Standards)
 FINE_AMOUNTS = {

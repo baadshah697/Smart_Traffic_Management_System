@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { apiService } from '../api/apiService';
 import {
   Search, CreditCard, CheckCircle, ShieldAlert, ExternalLink,
   MapPin, Activity, FileText, AlertTriangle, Download,
-  UserPlus, Car, Phone, User, Palette, CheckCircle2, X
+  UserPlus, Car, Phone, User, Palette, CheckCircle2, X, Volume2
 } from 'lucide-react';
 import PublicParkingMap from './PublicParkingMap';
 
@@ -46,6 +46,86 @@ const CitizenPortal: React.FC<CitizenPortalProps> = ({ onGoToLogin }) => {
   const [parkDuration, setParkDuration] = useState(60);
   const [parkMsg, setParkMsg] = useState('');
   const [parkingRequests, setParkingRequests] = useState<any[]>([]);
+
+  const [voiceMode, setVoiceMode] = useState<'en' | 'hi' | 'both' | 'muted'>(() => {
+    const saved = localStorage.getItem('btu_voice_mode');
+    return (saved as any) || 'both';
+  });
+
+  const [spokenIds] = useState(() => new Set<string>());
+  const isFirstLoad = useRef(true);
+
+  const handleVoiceModeChange = (mode: 'en' | 'hi' | 'both' | 'muted') => {
+    setVoiceMode(mode);
+    localStorage.setItem('btu_voice_mode', mode);
+  };
+
+  const speakAnnouncement = (ann: any) => {
+    if (voiceMode === 'muted') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    const speakEn = () => {
+      const utterEn = new SpeechSynthesisUtterance(ann.text_en);
+      utterEn.lang = 'en-US';
+      const voices = synth.getVoices();
+      const enVoice = voices.find(v => v.lang.startsWith('en'));
+      if (enVoice) utterEn.voice = enVoice;
+      
+      utterEn.onend = () => {
+        if (voiceMode === 'both') speakHi();
+      };
+      synth.speak(utterEn);
+    };
+
+    const speakHi = () => {
+      const utterHi = new SpeechSynthesisUtterance(ann.text_hi);
+      utterHi.lang = 'hi-IN';
+      const voices = synth.getVoices();
+      const hiVoice = voices.find(v => v.lang.startsWith('hi'));
+      if (hiVoice) utterHi.voice = hiVoice;
+      synth.speak(utterHi);
+    };
+
+    if (voiceMode === 'en' || voiceMode === 'both') {
+      speakEn();
+    } else if (voiceMode === 'hi') {
+      speakHi();
+    }
+  };
+
+  useEffect(() => {
+    const dataInterval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/traffic/announcements`);
+        const announcements = res.data || [];
+
+        if (isFirstLoad.current) {
+          if (announcements.length > 0) {
+            const mostRecent = announcements[announcements.length - 1];
+            speakAnnouncement(mostRecent);
+          }
+          announcements.forEach((ann: any) => {
+            spokenIds.add(ann.id);
+          });
+          isFirstLoad.current = false;
+        } else {
+          announcements.forEach((ann: any) => {
+            if (!spokenIds.has(ann.id)) {
+              spokenIds.add(ann.id);
+              speakAnnouncement(ann);
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Telemetry sync failed");
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(dataInterval);
+    };
+  }, [voiceMode]);
 
   const handleOpenParkingReq = (lotId: string, lotName: string) => {
     setSelectedLot({ id: lotId, name: lotName });
@@ -205,6 +285,42 @@ const CitizenPortal: React.FC<CitizenPortalProps> = ({ onGoToLogin }) => {
                <button onClick={() => setActiveApp('challan')} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeApp === 'challan' ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Challans</button>
                <button onClick={() => setActiveApp('parking')} className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeApp === 'parking' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>GIS Parking</button>
             </div>
+            
+            <div className="flex bg-white/10 p-1 rounded-full border border-white/5 items-center gap-1">
+              <div className="px-2 text-white/40 flex items-center gap-1">
+                <Volume2 size={12} className={voiceMode === 'muted' ? 'text-red-500 animate-pulse' : 'text-purple-400'} />
+                <span className="text-[7px] font-black uppercase tracking-widest hidden lg:inline">Voice</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => handleVoiceModeChange('en')}
+                className={`px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'en' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                EN
+              </button>
+              <button 
+                type="button"
+                onClick={() => handleVoiceModeChange('hi')}
+                className={`px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'hi' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                HI
+              </button>
+              <button 
+                type="button"
+                onClick={() => handleVoiceModeChange('both')}
+                className={`px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'both' ? 'bg-purple-600 text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                BOTH
+              </button>
+              <button 
+                type="button"
+                onClick={() => handleVoiceModeChange('muted')}
+                className={`px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'muted' ? 'bg-red-600 text-white shadow-lg' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                MUTED
+              </button>
+            </div>
+
             <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/5">
               <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[9px] font-black text-white uppercase tracking-widest">Systems Active</span>

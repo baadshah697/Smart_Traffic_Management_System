@@ -126,8 +126,19 @@ def register_camera(camera_data: CameraRegister, user=Depends(require_role("offi
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/live/{camera_id}")
-def live_feed(camera_id: str):
-    """MJPEG Stream for Surveillance.tsx"""
+def live_feed(camera_id: str, token: str = None):
+    """MJPEG Stream for Surveillance.tsx — validates JWT token from query param or header."""
+    # Validate token if provided (both frontends pass ?token=...)
+    if token:
+        try:
+            from jose import jwt, JWTError
+            from app.deps import SECRET_KEY, ALGORITHM
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            if "sub" not in payload:
+                raise HTTPException(status_code=401, detail="Invalid token")
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
     def frame_generator():
         while True:
             frame_bytes = camera_frames.get(camera_id)

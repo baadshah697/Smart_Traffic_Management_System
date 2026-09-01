@@ -15,6 +15,7 @@
 import os
 import threading
 import time
+import uuid
 import numpy as np
 from datetime import datetime
 from app.database import create_supabase_client
@@ -39,6 +40,7 @@ MIN_GREEN = 10             # Minimum phase lock to prevent flickering
 STALE_THRESHOLD = 15       # Data decay (seconds)
 MAX_CAPACITY = 50.0        # Assumed max cars in a lane for normalization
 MODEL_PATH = "vitals_ppo_model.zip"
+NORM_PATH  = "vitals_ppo_vecnorm.pkl"
 
 VALID_DIRECTIONS = ["N", "E", "S", "W"]  # 0->N, 1->E, 2->S, 3->W
 
@@ -89,8 +91,11 @@ class IntersectionController:
         self.time_in_phase = 0
         self.is_emergency_override = False
 
-        # PPO Model
+        # PPO Model + VecNormalize stats
         self.rl_agent = None
+        self._obs_mean = None
+        self._obs_var = None
+        self._announcements = []
         self._initialize_rl_model()
 
         print("[INTERSECTION] PPO Controller Initialized", flush=True)
@@ -100,7 +105,7 @@ class IntersectionController:
     # ─────────────────────────────────────────────────────────
     def _initialize_rl_model(self):
         if not HAS_RL:
-            print("[INTERSECTION] stable-baselines3 missing. Using random policy fallback.", flush=True)
+            print("[INTERSECTION] stable-baselines3 missing. Using heuristic fallback.", flush=True)
             return
 
         device_opt = "cuda" if torch.cuda.is_available() else "cpu"
@@ -108,6 +113,21 @@ class IntersectionController:
         if os.path.exists(MODEL_PATH):
             print(f"[INTERSECTION] Loading pre-trained PPO from {MODEL_PATH} on {device_opt.upper()}", flush=True)
             self.rl_agent = PPO.load(MODEL_PATH, device=device_opt)
+
+            # Load VecNormalize stats for observation normalization at inference
+            if os.path.exists(NORM_PATH):
+                import pickle
+                with open(NORM_PATH, "rb") as f:
+                    norm_data = pickle.load(f)
+                # VecNormalize saves obs_rms (RunningMeanStd) which has .mean and .var
+                if hasattr(norm_data, 'obs_rms'):
+                    self._obs_mean = norm_data.obs_rms.mean.astype(np.float32)
+                    self._obs_var = norm_data.obs_rms.var.astype(np.float32)
+                    print(f"[INTERSECTION] VecNormalize stats loaded from {NORM_PATH}", flush=True)
+                else:
+                    print(f"[INTERSECTION] VecNormalize pickle missing obs_rms — using raw obs", flush=True)
+            else:
+                print(f"[INTERSECTION] No VecNormalize stats found — using raw observations", flush=True)
         else:
             print(f"[INTERSECTION] No weights found. Bootstrapping exploratory PPO on {device_opt.upper()}.", flush=True)
             env = TrafficMockEnv()
@@ -154,6 +174,11 @@ class IntersectionController:
                 }
             return res
 
+    def get_announcements(self) -> list:
+        """Returns the list of recent traffic announcements."""
+        with self._lock:
+            return list(self._announcements)
+
     # ─────────────────────────────────────────────────────────
     # BACKGROUND RL CYCLE
     # ─────────────────────────────────────────────────────────
@@ -187,6 +212,8 @@ class IntersectionController:
 
     def _rl_cycle(self, tick_count: int):
         now = time.time()
+        previous_green_idx = self.current_green_idx
+        previous_emergency = self.is_emergency_override
 
         # --- Safely snapshot the current lane state ---
         with self._lock:
@@ -218,29 +245,83 @@ class IntersectionController:
             # ── STEP 2: Phase Prediction Inference (only after MIN_GREEN ticks) ──
             if self.time_in_phase >= MIN_GREEN:
                 active_q = lanes[VALID_DIRECTIONS[self.current_green_idx]]["vehicle_count"]
-                
-                # Check all lanes to see if another lane needs it significantly more
-                highest_q = 0
-                highest_idx = self.current_green_idx
-                
-                for i, d in enumerate(VALID_DIRECTIONS):
-                    data_age = now - lanes[d]["last_update"]
-                    if data_age < STALE_THRESHOLD:
-                        count = lanes[d]["vehicle_count"]
-                        # If the camera is disconnected (N laptop), treat as 0
-                        if count > highest_q:
-                            highest_q = count
-                            highest_idx = i
 
-                # Add some hysteresis: only switch if the highest queue is noticeably larger
-                # or if the current active lane is completely empty
-                if highest_idx != self.current_green_idx:
-                    if active_q == 0 or highest_q > (active_q + 5):
-                        target_phase = highest_idx
-                        self.time_in_phase = 0
-                        print(f"[AI DECISION] Routing phase to {VALID_DIRECTIONS[target_phase]} (Queues maxed at {highest_q})", flush=True)
+                # ── STEP 2a: PPO Neural Network Prediction ──
+                if self.rl_agent is not None:
+                    try:
+                        # Build 13D observation: [q_N, q_E, q_S, q_W, e_N..e_W, p_N..p_W, t_norm]
+                        queues = np.array([
+                            lanes[d]["vehicle_count"] / MAX_CAPACITY
+                            for d in VALID_DIRECTIONS
+                        ], dtype=np.float32).clip(0, 1)
+
+                        emergencies = np.array([
+                            1.0 if (lanes[d]["is_emergency"] and now - lanes[d]["last_update"] < STALE_THRESHOLD) else 0.0
+                            for d in VALID_DIRECTIONS
+                        ], dtype=np.float32)
+
+                        phase_onehot = np.zeros(4, dtype=np.float32)
+                        phase_onehot[self.current_green_idx] = 1.0
+
+                        t_norm = np.clip(self.time_in_phase / 60.0, 0, 1).astype(np.float32)
+
+                        obs = np.concatenate([queues, emergencies, phase_onehot, [t_norm]])
+
+                        # Apply VecNormalize if stats are available
+                        if self._obs_mean is not None and self._obs_var is not None:
+                            obs = np.clip((obs - self._obs_mean) / np.sqrt(self._obs_var + 1e-8), -10.0, 10.0)
+
+                        action, _ = self.rl_agent.predict(obs, deterministic=True)
+                        action = int(action)
+
+                        if action != self.current_green_idx:
+                            target_phase = action
+                            self.time_in_phase = 0
+                            print(f"[PPO DECISION] Routing phase to {VALID_DIRECTIONS[target_phase]} "
+                                  f"(Queues: N={int(queues[0]*MAX_CAPACITY)} E={int(queues[1]*MAX_CAPACITY)} "
+                                  f"S={int(queues[2]*MAX_CAPACITY)} W={int(queues[3]*MAX_CAPACITY)})", flush=True)
+                    except Exception as e:
+                        print(f"[RL-FALLBACK] PPO predict error: {e}. Using heuristic.", flush=True)
+                        self._heuristic_phase_select(lanes, now, active_q)
+
+                # ── STEP 2b: Heuristic Fallback (no RL agent loaded) ──
+                else:
+                    target_phase = self._heuristic_phase_select(lanes, now, active_q)
 
         # ── STEP 3: Apply phase decision ──
+        # Check if green phase has switched or emergency override activated
+        if (self.is_emergency_override and not previous_emergency) or \
+           (self.is_emergency_override and target_phase != previous_green_idx):
+            direction = VALID_DIRECTIONS[target_phase]
+            dir_name = {"N": "North", "E": "East", "S": "South", "W": "West"}.get(direction, direction)
+            dir_name_hi = {"N": "उत्तर", "E": "पूर्व", "S": "दक्षिण", "W": "पश्चिम"}.get(direction, direction)
+            with self._lock:
+                self._announcements.append({
+                    "id": str(uuid.uuid4()),
+                    "timestamp": now,
+                    "type": "ambulance",
+                    "direction": direction,
+                    "text_en": f"Ambulance on {dir_name} lane so the lane is greened",
+                    "text_hi": f"{dir_name_hi} लेन पर एम्बुलेंस है इसलिए लेन को हरा कर दिया गया है"
+                })
+                if len(self._announcements) > 10:
+                    self._announcements.pop(0)
+        elif not self.is_emergency_override and target_phase != previous_green_idx:
+            direction = VALID_DIRECTIONS[target_phase]
+            dir_name = {"N": "North", "E": "East", "S": "South", "W": "West"}.get(direction, direction)
+            dir_name_hi = {"N": "उत्तर", "E": "पूर्व", "S": "दक्षिण", "W": "पश्चिम"}.get(direction, direction)
+            with self._lock:
+                self._announcements.append({
+                    "id": str(uuid.uuid4()),
+                    "timestamp": now,
+                    "type": "congestion",
+                    "direction": direction,
+                    "text_en": f"Congestion value more on {dir_name} lane so letting it turn green",
+                    "text_hi": f"{dir_name_hi} लेन पर ट्रैफ़िक अधिक है इसलिए इसे हरा होने दिया जा रहा है"
+                })
+                if len(self._announcements) > 10:
+                    self._announcements.pop(0)
+
         self.current_green_idx = target_phase
         active_dir = VALID_DIRECTIONS[self.current_green_idx]
 
@@ -264,6 +345,27 @@ class IntersectionController:
             # Build reverse map without lock (we have a local snapshot)
             dir_to_cam = {v: k for k, v in camera_to_dir.items()}
             self._push_to_db(new_state, dir_to_cam)
+
+    def _heuristic_phase_select(self, lanes: dict, now: float, active_q: int) -> int:
+        """Greedy queue-length heuristic fallback when PPO is unavailable."""
+        highest_q = 0
+        highest_idx = self.current_green_idx
+
+        for i, d in enumerate(VALID_DIRECTIONS):
+            data_age = now - lanes[d]["last_update"]
+            if data_age < STALE_THRESHOLD:
+                count = lanes[d]["vehicle_count"]
+                if count > highest_q:
+                    highest_q = count
+                    highest_idx = i
+
+        target = self.current_green_idx
+        if highest_idx != self.current_green_idx:
+            if active_q == 0 or highest_q > (active_q + 5):
+                target = highest_idx
+                self.time_in_phase = 0
+                print(f"[HEURISTIC] Routing phase to {VALID_DIRECTIONS[target]} (Queue: {highest_q})", flush=True)
+        return target
 
     def _push_to_db(self, state: dict, dir_to_cam: dict):
         """

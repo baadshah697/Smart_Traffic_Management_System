@@ -16,8 +16,8 @@ from app.database import create_supabase_client
 # 1. INITIALIZATION & HARDWARE SETUP
 # ─────────────────────────────────────────────────────────────
 ai_lock = threading.Lock() 
-# Relaxed pattern: allows more variations, missing chars, and doesn't enforce strict start/end
-INDIAN_PLATE_PATTERN = r"[A-Z]{2}[0-9A-Z]{4,8}"
+# Robust Indian license plate regex pattern
+INDIAN_PLATE_PATTERN = r"^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{1,4}$"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
@@ -87,23 +87,144 @@ def is_ambulance_heuristic(crop):
 # ─────────────────────────────────────────────────────────────
 # 3. OCR FUNCTIONS
 # ─────────────────────────────────────────────────────────────
+
+LETTERS_TO_DIGITS = {
+    'O': '0', 'I': '1', 'Z': '2', 'S': '5', 'B': '8', 'G': '6', 'T': '7', 'D': '0'
+}
+DIGITS_TO_LETTERS = {
+    '0': 'O', '1': 'I', '2': 'Z', '5': 'S', '8': 'B'
+}
+
+def to_letter(c):
+    return DIGITS_TO_LETTERS.get(c, c)
+
+def to_digit(c):
+    return LETTERS_TO_DIGITS.get(c, c)
+
+def normalize_indian_plate(text):
+    text = re.sub(r'[^A-Z0-9]', '', text.upper())
+    if len(text) < 7:
+        return None
+    
+    best_overall_score = -1
+    best_overall_plate = None
+    
+    # Try all substrings of length 7 to 10
+    for length in range(7, min(11, len(text) + 1)):
+        for start in range(len(text) - length + 1):
+            candidate = text[start:start+length]
+            
+            # State code: first 2 chars must be letters
+            state = to_letter(candidate[0]) + to_letter(candidate[1])
+            state_score = 0
+            for c in candidate[:2]:
+                if c.isalpha(): state_score += 2
+                elif c in DIGITS_TO_LETTERS: state_score += 1
+            
+            remaining = candidate[2:]
+            L = len(remaining)
+            
+            for d in [1, 2]:
+                for s in [0, 1, 2, 3]:
+                    for n in [1, 2, 3, 4]:
+                        if d + s + n == L:
+                            dist_part = remaining[:d]
+                            ser_part = remaining[d:d+s]
+                            num_part = remaining[d+s:]
+                            
+                            score = state_score
+                            for char in dist_part:
+                                if char.isdigit(): score += 2
+                                elif char in LETTERS_TO_DIGITS: score += 1
+                            for char in ser_part:
+                                if char.isalpha(): score += 2
+                                elif char in DIGITS_TO_LETTERS: score += 1
+                            for char in num_part:
+                                if char.isdigit(): score += 2
+                                elif char in LETTERS_TO_DIGITS: score += 1
+                                
+                            # Preference weight for common plate length distributions
+                            if L == 8 and d == 2 and s == 2 and n == 4:
+                                score += 0.5
+                            elif L == 7 and d == 2 and s == 1 and n == 4:
+                                score += 0.5
+                            elif L == 7 and d == 1 and s == 2 and n == 4:
+                                score += 0.5
+                            elif L == 6 and d == 2 and s == 0 and n == 4:
+                                score += 0.5
+                                
+                            if score > best_overall_score:
+                                best_overall_score = score
+                                normalized_dist = "".join(to_digit(c) for c in dist_part)
+                                normalized_ser = "".join(to_letter(c) for c in ser_part)
+                                normalized_num = "".join(to_digit(c) for c in num_part)
+                                best_overall_plate = state + normalized_dist + normalized_ser + normalized_num
+                                
+    return best_overall_plate
+
+def preprocess_plate_crop(crop, upscale=True):
+    if crop is None or crop.size == 0:
+        return None
+    h, w = crop.shape[:2]
+    # Scale crop to minimum 200px width for better OCR readability
+    if upscale and w < 200:
+        scale = 200.0 / w
+        new_w = 200
+        new_h = int(h * scale)
+        crop = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray = clahe.apply(gray)
+    gray = cv2.bilateralFilter(gray, 9, 75, 75)
+    return gray
+
+def run_ocr_pipeline(crop):
+    """Runs OCR pipeline with preprocessing and retry logic."""
+    gray = preprocess_plate_crop(crop)
+    if gray is None:
+        return "UNKNOWN"
+        
+    # Attempt 1: Standard preprocessed gray
+    results = plate_reader.readtext(gray, detail=0)
+    if results:
+        raw_txt = "".join(results).upper().replace(" ", "").replace("-", "")
+        print(f"🔎 [OCR RAW ATTEMPT 1] '{raw_txt}'", flush=True)
+        normalized = normalize_indian_plate(raw_txt)
+        if normalized and re.match(INDIAN_PLATE_PATTERN, normalized):
+            print(f"🔤 [OCR PASS 1] Plate: {normalized}", flush=True)
+            return normalized
+            
+    # Attempt 2: Adaptive thresholding
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    results = plate_reader.readtext(thresh, detail=0)
+    if results:
+        raw_txt = "".join(results).upper().replace(" ", "").replace("-", "")
+        print(f"🔎 [OCR RAW ATTEMPT 2] '{raw_txt}'", flush=True)
+        normalized = normalize_indian_plate(raw_txt)
+        if normalized and re.match(INDIAN_PLATE_PATTERN, normalized):
+            print(f"🔤 [OCR PASS 2] Plate: {normalized}", flush=True)
+            return normalized
+            
+    # Attempt 3: Inverted thresholding
+    inverted = cv2.bitwise_not(thresh)
+    results = plate_reader.readtext(inverted, detail=0)
+    if results:
+        raw_txt = "".join(results).upper().replace(" ", "").replace("-", "")
+        print(f"🔎 [OCR RAW ATTEMPT 3] '{raw_txt}'", flush=True)
+        normalized = normalize_indian_plate(raw_txt)
+        if normalized and re.match(INDIAN_PLATE_PATTERN, normalized):
+            print(f"🔤 [OCR PASS 3] Plate: {normalized}", flush=True)
+            return normalized
+            
+    return "UNKNOWN"
+
 def execute_ocr_on_crop(evidence_path):
     """Background OCR on saved evidence. Returns plate or 'UNKNOWN'."""
     try:
         img = cv2.imread(evidence_path)
         if img is None: return "UNKNOWN"
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
-        results = plate_reader.readtext(gray, detail=0)
-        if results:
-            raw_txt = "".join(results).upper().replace(" ", "").replace("-", "")
-            print(f"🔎 [OCR RAW] Found text: '{raw_txt}'", flush=True)
-            if re.search(INDIAN_PLATE_PATTERN, raw_txt):
-                # Extract just the matching portion
-                match = re.search(INDIAN_PLATE_PATTERN, raw_txt)
-                clean_txt = match.group(0)
-                print(f"🔤 [OCR] Plate Extracted: {clean_txt}", flush=True)
-                return clean_txt
+        return run_ocr_pipeline(img)
     except Exception as e:
         print(f"⚠️ [OCR ERROR] {e}", flush=True)
     return "UNKNOWN"
@@ -113,17 +234,9 @@ def try_ocr_on_plates(plate_boxes, frame):
     for px1, py1, px2, py2 in plate_boxes:
         crop = frame[max(0, py1):py2, max(0, px1):px2]
         if crop.size == 0: continue
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
-        res = plate_reader.readtext(gray, detail=0)
-        if res:
-            raw_txt = "".join(res).upper().replace(" ", "").replace("-", "")
-            print(f"🔎 [OCR RAW] Found text: '{raw_txt}'", flush=True)
-            if re.search(INDIAN_PLATE_PATTERN, raw_txt):
-                match = re.search(INDIAN_PLATE_PATTERN, raw_txt)
-                clean_txt = match.group(0)
-                print(f"🔤 [OCR] Plate: {clean_txt}", flush=True)
-                return clean_txt
+        res_plate = run_ocr_pipeline(crop)
+        if res_plate != "UNKNOWN":
+            return res_plate
     return "UNKNOWN"
 
 # ─────────────────────────────────────────────────────────────
@@ -189,7 +302,9 @@ def process_frame(frame, camera_id):
         elif cls2 == CUSTOM_CLS_HELMET:
             m2_helmets.append(box)
         elif cls2 == CUSTOM_CLS_PLATE:
-            m2_plates.append(box)
+            conf = float(b.conf[0]) if b.conf is not None else 1.0
+            if conf > 0.40:
+                m2_plates.append(box)
         elif cls2 == CUSTOM_CLS_MOTO:
             m2_motos.append(box)
 
@@ -312,46 +427,7 @@ def process_frame(frame, camera_id):
                 cv2.putText(frame, "NO HELMET", (p[0], p[1]-10), 0, 0.5, (0,0,255), 2)
                 _fire_violation("No Helmet", plate_txt, camera_id, 0.80, evidence, track_id)
 
-        # ───────────────────────────────────────────
-        # VIOLATION 3: RED LIGHT JUMP (CARS, BIKES, TRUCKS, BUSES)
-        # ───────────────────────────────────────────
-        # Lazy import to avoid circular dependency since utils provides telemetry to controller
-        from app.intersection_controller import intersection_controller
-        status = intersection_controller.get_status()
-        lane_signal = "green"
-        for dir_key, details in status.items():
-            if details.get("camera_id") == camera_id:
-                lane_signal = details.get("signal", "green")
-                break
         
-        if lane_signal == "red":
-            h, w = frame.shape[:2]
-            cross_line_y = int(h * 0.6)  # Enforcement line at 60% height
-            cv2.line(frame, (0, cross_line_y), (w, cross_line_y), (0, 0, 255), 2)
-            cv2.putText(frame, "RED LIGHT ENFORCEMENT ACTIVE", (10, cross_line_y - 10), 0, 0.6, (0, 0, 255), 2)
-
-            for v in m1_vehicles:
-                bx1, by1, bx2, by2 = v["box"]
-                tid = v["tid"]
-                if tid is None: continue
-                
-                # Check if vehicle's bottom edge (wheels/bumper) crossed the enforcement line
-                if by2 > cross_line_y:
-                    # Find plates inside this vehicle box
-                    v_plates = []
-                    for pl_box in m2_plates:
-                        pcx, pcy = box_center(pl_box)
-                        plate_zone = [bx1 - 20, by1, bx2 + 20, by2 + 30]
-                        if box_contains(plate_zone, (pcx, pcy)):
-                            v_plates.append(pl_box)
-                    
-                    plate_txt = try_ocr_on_plates(v_plates, frame) if v_plates else "UNKNOWN"
-                    
-                    evidence = frame[max(0, by1):by2, max(0, bx1):bx2]
-                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 0, 255), 3)
-                    cv2.putText(frame, f"RED LIGHT JUMP!", (bx1, by1 - 10), 0, 0.7, (0, 0, 255), 2)
-                    
-                    _fire_violation("Red Light Jump", plate_txt, camera_id, 0.90, evidence, tid)
 
     # ─── Periodic Cleanup ───
     now = time.time()
@@ -370,7 +446,7 @@ def process_frame(frame, camera_id):
 # 5. FIRE-AND-FORGET VIOLATION POSTING
 # ─────────────────────────────────────────────────────────────
 
-def _fire_violation(v_type, plate_txt, camera_id, conf, crop, track_id):
+def _fire_violation(v_type, plate_txt, camera_id, conf, crop, track_id, source=None):
     """Cooldown check (fast, in GPU thread), then dispatch to background."""
     cache_key = f"{camera_id}_{v_type}_{track_id}"
     now = time.time()
@@ -389,12 +465,39 @@ def _fire_violation(v_type, plate_txt, camera_id, conf, crop, track_id):
     # Dispatch all DB work to background
     _bg_pool.submit(_post_violation_bg, v_type, plate_txt, camera_id, conf, img_name, img_path)
 
+FINE_AMOUNTS = {
+    "No Helmet": 500,
+    "Triple Riding": 1000,
+    "Wrong Side": 1500,
+    "Speeding": 2000,
+    "Signal Jump": 1000
+}
+
 def _post_violation_bg(v_type, plate_number, cam_id, conf, img_name, img_path):
     """Background thread: Posts violation + challan to Supabase, then runs OCR."""
     try:
         db = _get_bg_supabase()
         clean_plate = re.sub(r'[^A-Z0-9]', '', plate_number.upper())
         
+        # Dedup check (same plate+violation within 60s)
+        if clean_plate not in ["UNKNOWN", "PENDING", ""]:
+            time_threshold = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
+            recent = db.table("violations")\
+                .select("id")\
+                .eq("camera_id", str(cam_id))\
+                .eq("violation_type", v_type)\
+                .eq("plate_number", clean_plate)\
+                .gt("detected_at", time_threshold)\
+                .execute()
+            if recent.data:
+                print(f"⚠️ [DEDUP] Duplicate violation ignored for {clean_plate} ({v_type}) within 60s", flush=True)
+                try:
+                    if os.path.exists(img_path):
+                        os.remove(img_path)
+                except Exception:
+                    pass
+                return
+                
         v_id = str(uuid.uuid4())
         payload = {
             "id": v_id,
@@ -414,7 +517,7 @@ def _post_violation_bg(v_type, plate_number, cam_id, conf, img_name, img_path):
         owner_id = v_res.data[0].get('owner_id') if v_res.data else None
         owner_name = v_res.data[0].get('owner_name', "Unregistered Vehicle") if v_res.data else "Unregistered Vehicle"
 
-        fine = 1000 if v_type == "Triple Riding" else 500
+        fine = FINE_AMOUNTS.get(v_type, 500)
         
         challan_payload = {
             "id": str(uuid.uuid4()),
@@ -435,9 +538,38 @@ def _post_violation_bg(v_type, plate_number, cam_id, conf, img_name, img_path):
         if payload["plate_number"] == "UNKNOWN":
             ocr_plate = execute_ocr_on_crop(img_path)
             if ocr_plate != "UNKNOWN":
+                # Check for duplicate after OCR
+                time_threshold = (datetime.utcnow() - timedelta(seconds=60)).isoformat()
+                recent = db.table("violations")\
+                    .select("id")\
+                    .eq("camera_id", str(cam_id))\
+                    .eq("violation_type", v_type)\
+                    .eq("plate_number", ocr_plate)\
+                    .gt("detected_at", time_threshold)\
+                    .execute()
+                if recent.data:
+                    print(f"⚠️ [DEDUP-OCR] Duplicate violation detected after OCR for {ocr_plate} ({v_type}). Deleting current.", flush=True)
+                    db.table("violations").delete().eq("id", v_id).execute()
+                    db.table("e_challans").delete().eq("violation_id", v_id).execute()
+                    try:
+                        if os.path.exists(img_path):
+                            os.remove(img_path)
+                    except Exception:
+                        pass
+                    return
+                
+                # Re-lookup owner
+                v_res = db.table("vehicles").select("owner_id, owner_name").eq("plate_number", ocr_plate).execute()
+                owner_id = v_res.data[0].get('owner_id') if v_res.data else None
+                owner_name = v_res.data[0].get('owner_name', "Unregistered Vehicle") if v_res.data else "Unregistered Vehicle"
+                
                 db.table("violations").update({"plate_number": ocr_plate}).eq("id", v_id).execute()
-                db.table("e_challans").update({"vehicle_number": ocr_plate}).eq("violation_id", v_id).execute()
-                print(f"🔤 [OCR UPDATE] {v_id[:8]} → {ocr_plate}", flush=True)
+                db.table("e_challans").update({
+                    "vehicle_number": ocr_plate,
+                    "owner_id": owner_id,
+                    "owner_name": owner_name
+                }).eq("violation_id", v_id).execute()
+                print(f"🔤 [OCR UPDATE & LINK] {v_id[:8]} → {ocr_plate} | Owner: {owner_name}", flush=True)
 
     except Exception as e:
         print(f"❌ [DB SYNC ERROR] {e}", flush=True)

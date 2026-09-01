@@ -91,11 +91,16 @@ class VitalsTrainingEnv(gym.Env):
         switch_penalty = 0.0
         if action != self.current_phase:
             if self.time_in_phase < self.MIN_GREEN:
-                switch_penalty = -50.0  # Penalty for flickering
+                switch_penalty = -20.0  # Penalty for flickering (reduced to allow necessary switches)
             self.current_phase = action
             self.time_in_phase = 0.0
         else:
             self.time_in_phase += 1.0
+
+        # ── Routing bonus (computed BEFORE dynamics so it rewards the initial decision) ──
+        max_q_i = int(np.argmax(self.queues))
+        served_correctly = (action == max_q_i)
+        routing_bonus = (self.queues[max_q_i] / self.MAX_CAPACITY) * 15.0 if served_correctly else 0.0
 
         # ── Vehicle dynamics ───────────────────────────────────
         arrivals = self._sample_arrivals()
@@ -108,12 +113,10 @@ class VitalsTrainingEnv(gym.Env):
                 # Red lanes: queue builds up
                 self.queues[i] = min(self.MAX_CAPACITY, self.queues[i] + arrivals[i])
 
-        # ── Reward ────────────────────────────────────────────
+        # ── Reward (scaled down so value function can learn; raw returns ~-750) ──
         total_q  = float(np.sum(self.queues))
-        max_q_i  = int(np.argmax(self.queues))
-        routing_bonus = 10.0 if action == max_q_i else 0.0  # Reward serving busiest lane
-
-        reward = -total_q * 0.1 + routing_bonus + switch_penalty
+        raw_reward = -total_q * 0.1 + routing_bonus + switch_penalty
+        reward = raw_reward / 10.0
 
         terminated = self.steps >= self.EPISODE_LEN
         return self._get_obs(), reward, terminated, False, {}
@@ -140,38 +143,47 @@ def main():
     n_envs = 4
     env = make_vec_env(VitalsTrainingEnv, n_envs=n_envs)
 
+    # Normalize observations and rewards for stable PPO training
+    from stable_baselines3.common.vec_env import VecNormalize
+    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0, clip_reward=10.0)
+
     model_path = "vitals_ppo_model.zip"
+    norm_path = "vitals_ppo_vecnorm.pkl"
 
-    # If an existing model exists, continue training from it
-    if os.path.exists(model_path):
-        print(f"[TRAIN] Found existing model — continuing training from {model_path}")
-        model = PPO.load(model_path, env=env, device=device_opt)
-        model.set_env(env)
-    else:
-        print("[TRAIN] No existing model — training from scratch")
-        model = PPO(
-            "MlpPolicy",
-            env,
-            verbose=1,
-            device=device_opt,
-            learning_rate=3e-4,
-            n_steps=2048,
-            batch_size=64,
-            n_epochs=10,
-            gamma=0.99,
-            gae_lambda=0.95,
-            clip_range=0.2,
-            tensorboard_log="./tensorboard_logs/",
-        )
+    # Always train from scratch to ensure clean convergence
+    for p in [model_path, norm_path]:
+        if os.path.exists(p):
+            print(f"[TRAIN] Removing stale '{p}' — retraining from scratch")
+            os.remove(p)
 
-    TIMESTEPS = 100_000
+    print("[TRAIN] Training new PPO agent from scratch (with VecNormalize)")
+    model = PPO(
+        "MlpPolicy",
+        env,
+        verbose=1,
+        device="cpu",              # MlpPolicy trains faster on CPU (SB3 recommendation)
+        learning_rate=3e-4,
+        n_steps=2048,
+        batch_size=64,
+        n_epochs=10,
+        gamma=0.99,
+        gae_lambda=0.95,
+        clip_range=0.2,
+        ent_coef=0.05,             # Higher entropy to maintain exploration
+        policy_kwargs=dict(net_arch=[128, 128]),
+        tensorboard_log="./tensorboard_logs/",
+    )
+
+    TIMESTEPS = 500_000
     print(f"[TRAIN] Training for {TIMESTEPS:,} timesteps across {n_envs} parallel environments...")
-    print("[TRAIN] This will take 2-4 minutes on GPU. Watch for mean_reward improvement.\n")
+    print("[TRAIN] This will take 5-8 minutes. Watch for explained_variance > 0.\n")
 
     model.learn(total_timesteps=TIMESTEPS, progress_bar=True)
 
     model.save(model_path)
+    env.save(norm_path)
     print(f"\n[DONE] Model saved => '{model_path}'")
+    print(f"[DONE] VecNormalize stats saved => '{norm_path}'")
     print("[DONE] Restart the backend server to load the new weights automatically!")
     print("       The PPO Agent will now serve all 4 lanes (N/E/S/W) intelligently.\n")
 

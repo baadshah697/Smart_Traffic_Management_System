@@ -14,15 +14,29 @@ __pycache__/
 app/static/evidence/
 tensorboard_logs/
 
-# React
+# React & Frontend
 node_modules/
 dist/
 build/
 .next/
 out/
+frontend-v2/android/
+frontend-v2/ios/
+.expo/
 
-# AI Models
+# AI Models & Checkpoints
 *.pt
 *yolo*.pt
 *best.pt
-vitals_ppo_model.zip
+*.zip
+*.pkl
+
+# Mobile Apps & Binaries
+*.apk
+*.aab
+
+# DB & Test Files
+PyWhatKit_DB.txt
+test_*.jpg
+test_*.png
+*.sqlite3

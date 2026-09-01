@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { apiService } from '../api/apiService';
 import { 
   Camera, Plus, X, Globe, Cpu, RefreshCw, 
-  Trash2, Tag, ShieldCheck, ShieldAlert, Activity 
+  Trash2, Tag, ShieldCheck, ShieldAlert, Activity, Volume2 
 } from 'lucide-react';
 
 const Surveillance = () => {
@@ -24,6 +24,53 @@ const Surveillance = () => {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [activeNode, setActiveNode] = useState<string | null>(null); 
   const [liveFines, setLiveFines] = useState<any>({});
+  
+  const [voiceMode, setVoiceMode] = useState<'en' | 'hi' | 'both' | 'muted'>(() => {
+    const saved = localStorage.getItem('btu_voice_mode');
+    return (saved as any) || 'both';
+  });
+
+  const [spokenIds] = useState(() => new Set<string>());
+  const isFirstLoad = useRef(true);
+
+  const handleVoiceModeChange = (mode: 'en' | 'hi' | 'both' | 'muted') => {
+    setVoiceMode(mode);
+    localStorage.setItem('btu_voice_mode', mode);
+  };
+
+  const speakAnnouncement = (ann: any) => {
+    if (voiceMode === 'muted') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    const speakEn = () => {
+      const utterEn = new SpeechSynthesisUtterance(ann.text_en);
+      utterEn.lang = 'en-US';
+      const voices = synth.getVoices();
+      const enVoice = voices.find(v => v.lang.startsWith('en'));
+      if (enVoice) utterEn.voice = enVoice;
+      
+      utterEn.onend = () => {
+        if (voiceMode === 'both') speakHi();
+      };
+      synth.speak(utterEn);
+    };
+
+    const speakHi = () => {
+      const utterHi = new SpeechSynthesisUtterance(ann.text_hi);
+      utterHi.lang = 'hi-IN';
+      const voices = synth.getVoices();
+      const hiVoice = voices.find(v => v.lang.startsWith('hi'));
+      if (hiVoice) utterHi.voice = hiVoice;
+      synth.speak(utterHi);
+    };
+
+    if (voiceMode === 'en' || voiceMode === 'both') {
+      speakEn();
+    } else if (voiceMode === 'hi') {
+      speakHi();
+    }
+  };
   
   const [formData, setFormData] = useState({ 
     location_name: '', 
@@ -70,13 +117,39 @@ const Surveillance = () => {
 
     const dataInterval = setInterval(async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/traffic/congestion`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const [res, annRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/traffic/congestion`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          axios.get(`${API_BASE_URL}/traffic/announcements`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
         
+        const roads = res.data || [];
+        const announcements = annRes.data || [];
+
+        if (isFirstLoad.current) {
+          if (announcements.length > 0) {
+            const mostRecent = announcements[announcements.length - 1];
+            speakAnnouncement(mostRecent);
+          }
+          announcements.forEach((ann: any) => {
+            spokenIds.add(ann.id);
+          });
+          isFirstLoad.current = false;
+        } else {
+          announcements.forEach((ann: any) => {
+            if (!spokenIds.has(ann.id)) {
+              spokenIds.add(ann.id);
+              speakAnnouncement(ann);
+            }
+          });
+        }
+
         setSignalStates((prev: any) => {
           const newState = { ...prev }; 
-          res.data.forEach((sig: any) => {
+          roads.forEach((sig: any) => {
             const camId = sig.camera_id;
             if (!camId) return;
 
@@ -181,6 +254,37 @@ const Surveillance = () => {
               </div>
             ))}
             
+            <div className="flex bg-white/5 border border-white/10 p-1 rounded-3xl items-center gap-1 backdrop-blur-xl">
+              <div className="px-3 text-white/40 flex items-center gap-1.5">
+                <Volume2 size={14} className={voiceMode === 'muted' ? 'text-red-500 animate-pulse' : 'text-purple-400'} />
+                <span className="text-[8px] font-black uppercase tracking-widest hidden sm:inline">Voice</span>
+              </div>
+              <button 
+                onClick={() => handleVoiceModeChange('en')}
+                className={`px-4 py-2.5 rounded-2xl text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'en' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                EN
+              </button>
+              <button 
+                onClick={() => handleVoiceModeChange('hi')}
+                className={`px-4 py-2.5 rounded-2xl text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'hi' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                HI
+              </button>
+              <button 
+                onClick={() => handleVoiceModeChange('both')}
+                className={`px-4 py-2.5 rounded-2xl text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'both' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                BOTH
+              </button>
+              <button 
+                onClick={() => handleVoiceModeChange('muted')}
+                className={`px-4 py-2.5 rounded-2xl text-[8px] font-black uppercase tracking-widest transition-all ${voiceMode === 'muted' ? 'bg-red-600 text-white shadow-lg shadow-red-950/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+              >
+                MUTED
+              </button>
+            </div>
+
             <button onClick={() => setShowAddModal(true)} className="bg-white text-black hover:bg-purple-600 hover:text-white px-8 py-4 rounded-3xl font-black text-[10px] uppercase tracking-widest flex items-center gap-3 transition-all ml-4">
               <Plus size={16} /> Deploy Node
             </button>
