@@ -37,6 +37,7 @@ V.I.T.A.L.S. is an end-to-end, fully autonomous ecosystem designed to modernize 
 Follow these instructions to clone, set up, and run the complete system locally.
 
 ### 1. Prerequisites
+- **NVIDIA GPU with CUDA Support** (Highly Recommended: Running dual YOLOv8 models on CPU will cause severe lag during real-time traffic analysis)
 - **Python 3.9+** (For the FastAPI Backend and AI Models)
 - **Node.js v18+ & npm** (For the React Dashboard)
 - **Git**
@@ -83,9 +84,14 @@ Because AI models are large binaries, they are excluded from this repository. Be
 Open a terminal in the root directory:
 ```bash
 pip install -r requirements.txt
+```
+*(Important: Depending on your OS, standard `pip install` might download the CPU version of PyTorch. For GPU acceleration, you must manually install the CUDA version of `torch` and `torchvision`. Refer to the [PyTorch Get Started Guide](https://pytorch.org/get-started/locally/) for your specific CUDA version).*
+
+Start the server:
+```bash
 python -m uvicorn app.main:app --reload
 ```
-*Note: This will output GPU initialization logs and automatically boot the intersection simulation threads.*
+*Note: This will output GPU (CUDA) initialization logs and automatically boot the intersection simulation threads.*
 
 ### Step 2: Start the Officer Web Dashboard (React)
 Open a new terminal and navigate to the frontend folder:
