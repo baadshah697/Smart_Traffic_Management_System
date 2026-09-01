@@ -237,3 +237,20 @@ create table public.payments (
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_payments_challan_id on public.payments using btree (challan_id) TABLESPACE pg_default;
+
+create table public.vehicles (
+  id uuid not null default gen_random_uuid (),
+  plate_number text not null,
+  type text null,
+  model text null,
+  owner_name text null default 'Unknown Owner'::text,
+  created_at timestamp with time zone null default now(),
+  owner_id uuid null,
+  phone text null,
+  vehicle_color text null,
+  constraint vehicles_pkey primary key (id),
+  constraint vehicles_plate_number_key unique (plate_number),
+  constraint vehicles_owner_id_fkey foreign KEY (owner_id) references users (id) on delete set null
+) TABLESPACE pg_default;
+
+create index IF not exists idx_vehicles_owner_id on public.vehicles using btree (owner_id) TABLESPACE pg_default;
