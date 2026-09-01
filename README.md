@@ -29,7 +29,6 @@ V.I.T.A.L.S. is an end-to-end, fully autonomous ecosystem designed to modernize 
 
 ### Frontends
 - **Admin Dashboard (`frontend-v2`)**: React + Vite secure portal for Traffic Officers.
-- **Citizen App (`AI_traffic_app`)**: React Native/Expo mobile application for citizens.
 
 ---
 
@@ -39,7 +38,7 @@ Follow these instructions to clone, set up, and run the complete system locally.
 
 ### 1. Prerequisites
 - **Python 3.9+** (For the FastAPI Backend and AI Models)
-- **Node.js v18+ & npm** (For the React Dashboard and Expo App)
+- **Node.js v18+ & npm** (For the React Dashboard)
 - **Git**
 
 ### 2. Clone the Repository
@@ -48,7 +47,6 @@ git clone https://github.com/baadshah697/Smart_Traffic_Management_System.git
 cd Smart_Traffic_Management_System
 ```
 
-*(Note: The mobile app `AI_traffic_app` is linked as a git submodule. If it appears empty, run `git submodule update --init --recursive`)*
 
 ### 3. Environment Variables
 The system uses Supabase. You need to provide your API keys to connect to the database.
@@ -88,14 +86,6 @@ npm run dev
 ```
 Navigate to the provided localhost URL (usually `http://localhost:5173`). The dashboard polls the backend every second to show live AI decisions on the **Surveillance** page.
 
-### Step 3: Start the Citizen Mobile App (Expo)
-Open a new terminal and navigate to the mobile app folder:
-```bash
-cd AI_traffic_app
-npm install
-npx expo start
-```
-Scan the QR code with the Expo Go app on iOS/Android or press `a` to run an Android emulator.
 
 ---
 
