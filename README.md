@@ -60,7 +60,7 @@ The system uses Supabase. You need to provide your API keys to connect to the da
 Your new Supabase project is initially empty. You must create the required tables and security policies:
 1. Go to your Supabase Dashboard -> **SQL Editor**.
 2. Open the `database/` folder in this repository.
-3. Copy and execute the contents of `schema.sql`, `rls_policies.sql`, `intersection_status.sql`, and `triggers.sql` (in that order) to initialize your database structure.
+3. Copy and execute the contents of `00_master_schema.sql`, `schema.sql`, `rls_policies.sql`, `intersection_status.sql`, and `triggers.sql` (in that order) to initialize your database structure.
 
 ### 5. AI Model Weights (Critical)
 Because AI models are large binaries, they are excluded from this repository. Before starting the backend, you **must** obtain the following model weights and place them in their respective directories:
